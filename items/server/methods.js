@@ -10,9 +10,7 @@ function maybeCompletePolls(session) {
     let maybeCompletedPolls = polls.map(([pollId, poll]) => {
         if (!poll.completed && Object.entries(poll.votes).length > 0) {
             const usernamesThatVoted = Object.keys(poll.votes);
-            const usernamesInSession = Object.entries(session.registeredUsers)
-                .filter(([name, present]) => present)
-                .map(([name, present]) => name);
+            const usernamesInSession = Object.values(session.registeredUsers);
             console.log(`usernamesThatVoted ${usernamesThatVoted}`);
             console.log(`usernamesInSession ${usernamesInSession}`);
             const completed = usernamesInSession.every(name => usernamesThatVoted.includes(name));
@@ -29,11 +27,12 @@ function maybeCompletePolls(session) {
 }
 
 function maybeSetConnectionId(session, usersConnectionId) {
-    Object.entries(session.registeredUsers).forEach(([username, connectionId]) => {
-        console.log("maybeSetConnectionId for ", username, connectionId);
+    Object.entries(session.registeredUsers).forEach(([connectionId, username]) => {
+        console.log(`maybeSetConnectionId for  <${connectionId}>, <${username}>`);
         if(!connectionId) {
-            session.registeredUsers[username] = usersConnectionId;
-            console.log(`just set username ${username} to ${session.registeredUsers[username]}`);
+            delete session.registeredUsers[connectionId];
+            session.registeredUsers[usersConnectionId] = username;
+            console.log(`just set username ${username} to ${usersConnectionId}`);
         }
     });
 }

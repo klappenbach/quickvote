@@ -65,7 +65,7 @@ type alias ConnectionId =
 
 
 type alias RegisteredUsers =
-    Dict Username ConnectionId
+    Dict ConnectionId Username
 
 
 type alias LocalPolls =
@@ -238,7 +238,7 @@ update msg model =
                                 Session sessionId polls registeredUsers
 
                             else
-                                Session sessionId polls (Dict.insert username "" registeredUsers)
+                                Session sessionId polls (Dict.insert "" username registeredUsers)
 
                 user =
                     if userAlreadyRegistered username model.state then
@@ -503,10 +503,10 @@ userAlreadyRegistered username state =
             False
 
         Session _ _ registeredUsers ->
-            Dict.member username registeredUsers
+            Dict.values registeredUsers |> List.member username
 
 
-voteFraction : Dict Username ConnectionId -> Poll -> ( Int, Int )
+voteFraction : Dict ConnectionId Username -> Poll -> ( Int, Int )
 voteFraction usersInSession poll =
     let
         activeUsers =
@@ -521,7 +521,8 @@ voteFraction usersInSession poll =
     in
     ( votesCount, activeUsers )
 
-voteFractionString : Dict Username ConnectionId -> Poll -> String
+
+voteFractionString : Dict ConnectionId Username -> Poll -> String
 voteFractionString registeredUsers poll =
     voteFraction registeredUsers poll
         |> Tuple.mapBoth String.fromInt String.fromInt
@@ -665,7 +666,7 @@ view model =
                             93
                             206
 
-                    justDisplayPoll : Poll -> Dict Username ConnectionId -> Element msg
+                    justDisplayPoll : Poll -> Dict ConnectionId Username -> Element msg
                     justDisplayPoll poll registeredUsers =
                         text poll.topic
                             :: (poll.options
@@ -674,7 +675,7 @@ view model =
                                )
                             |> displayPoll poll registeredUsers
 
-                    displayPoll : Poll -> Dict Username ConnectionId -> List (Element msg) -> Element msg
+                    displayPoll : Poll -> Dict ConnectionId Username -> List (Element msg) -> Element msg
                     displayPoll poll registeredUsers optionsElems =
                         row
                             [ width fill
@@ -887,7 +888,7 @@ pollingOptionDecoder =
         (field "createdAt" timeDecoder)
 
 
-registeredUsersDecoder : Decoder (Dict Username ConnectionId)
+registeredUsersDecoder : Decoder (Dict ConnectionId Username)
 registeredUsersDecoder =
     dict string
 
@@ -972,7 +973,7 @@ pollsEncoder polls =
     Encode.dict identity pollEncoder polls
 
 
-registeredUsersEncoder : Dict Username ConnectionId -> Encode.Value
+registeredUsersEncoder : Dict ConnectionId Username -> Encode.Value
 registeredUsersEncoder users =
     Encode.dict identity Encode.string users
 

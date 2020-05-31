@@ -7,7 +7,7 @@ Meteor.publish('sessions', function(id) {
 
     this._session.socket.on("close", Meteor.bindEnvironment(function()
     {
-        // TODO: remove user from session id, with this connectionId
+        Sessions.update(id, { $unset: {['registeredUsers.' + connectionId] : "" }});
         console.log(`logged out ${connectionId}`);
     }));
 
