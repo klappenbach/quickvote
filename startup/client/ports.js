@@ -37,9 +37,6 @@ const fromElm = (ports) => {
 };
 
 const toElm = (ports) => {
-    // Before tab is closed
-    window.addEventListener("beforeunload", function(event) {
-        ports.browserEvents.send("userLeaving")
-    });
+
 
 };

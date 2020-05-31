@@ -60,8 +60,12 @@ type alias Polls =
     Dict PollId Poll
 
 
+type alias ConnectionId =
+    String
+
+
 type alias RegisteredUsers =
-    Dict Username Bool
+    Dict Username ConnectionId
 
 
 type alias LocalPolls =
@@ -188,7 +192,6 @@ type Msg
     | Submit Poll Option
     | EditOption Poll Option
     | SetSession Value
-    | BrowserEvent Value
     | ChoseOption Poll Option
 
 
@@ -235,7 +238,7 @@ update msg model =
                                 Session sessionId polls registeredUsers
 
                             else
-                                Session sessionId polls (Dict.insert username True registeredUsers)
+                                Session sessionId polls (Dict.insert username "" registeredUsers)
 
                 user =
                     if userAlreadyRegistered username model.state then
@@ -410,41 +413,6 @@ update msg model =
                         Typing userName ->
                             ( model, Cmd.none )
 
-        BrowserEvent value ->
-            case decodeValue browserEventDecoder value of
-                Ok "userLeaving" ->
-                    let
-                        newModel =
-                            removeCurrentUserFrom model
-                    in
-                    ( newModel, editSession newModel.state )
-
-                Ok _ ->
-                    ( model, Cmd.none )
-
-                Err _ ->
-                    ( model, Cmd.none )
-
-
-removeCurrentUserFrom : Model -> Model
-removeCurrentUserFrom model =
-    case model.state of
-        NoSession ->
-            model
-
-        Session sessionId polls usersInSession ->
-            let
-                username =
-                    toString model.user
-
-                newUsersInSession =
-                    Dict.insert username False usersInSession
-
-                newState =
-                    Session sessionId polls newUsersInSession
-            in
-            { model | state = newState }
-
 
 maybePushUrl : State -> Nav.Key -> Url.Url -> Cmd msg
 maybePushUrl state key url =
@@ -535,11 +503,10 @@ userAlreadyRegistered username state =
             False
 
         Session _ _ registeredUsers ->
-            Dict.get username registeredUsers
-                |> Maybe.withDefault False
+            Dict.member username registeredUsers
 
 
-voteFraction : Dict Username Bool -> Poll -> ( Int, Int )
+voteFraction : Dict Username ConnectionId -> Poll -> ( Int, Int )
 voteFraction usersInSession poll =
     let
         activeUsers =
@@ -547,14 +514,14 @@ voteFraction usersInSession poll =
                 poll.votes |> Dict.size
 
             else
-                usersInSession |> Dict.values |> List.filter identity |> List.length
+                usersInSession |> Dict.values |> List.length
 
         votesCount =
             poll.votes |> Dict.keys |> List.length
     in
     ( votesCount, activeUsers )
 
-
+voteFractionString : Dict Username ConnectionId -> Poll -> String
 voteFractionString registeredUsers poll =
     voteFraction registeredUsers poll
         |> Tuple.mapBoth String.fromInt String.fromInt
@@ -579,7 +546,6 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ sessionChanged SetSession
-        , browserEvents BrowserEvent
         ]
 
 
@@ -590,9 +556,6 @@ subscriptions _ =
 
 
 port sessionChanged : (Value -> msg) -> Sub msg
-
-
-port browserEvents : (Value -> msg) -> Sub msg
 
 
 port watchSessionPort : SessionId -> Cmd msg
@@ -702,7 +665,7 @@ view model =
                             93
                             206
 
-                    justDisplayPoll : Poll -> Dict Username Bool -> Element msg
+                    justDisplayPoll : Poll -> Dict Username ConnectionId -> Element msg
                     justDisplayPoll poll registeredUsers =
                         text poll.topic
                             :: (poll.options
@@ -711,7 +674,7 @@ view model =
                                )
                             |> displayPoll poll registeredUsers
 
-                    displayPoll : Poll -> Dict Username Bool -> List (Element msg) -> Element msg
+                    displayPoll : Poll -> Dict Username ConnectionId -> List (Element msg) -> Element msg
                     displayPoll poll registeredUsers optionsElems =
                         row
                             [ width fill
@@ -924,9 +887,9 @@ pollingOptionDecoder =
         (field "createdAt" timeDecoder)
 
 
-registeredUsersDecoder : Decoder (Dict Username Bool)
+registeredUsersDecoder : Decoder (Dict Username ConnectionId)
 registeredUsersDecoder =
-    dict bool
+    dict string
 
 
 pollsDecoder : Decoder (Dict PollId Poll)
@@ -1009,9 +972,9 @@ pollsEncoder polls =
     Encode.dict identity pollEncoder polls
 
 
-registeredUsersEncoder : Dict Username Bool -> Encode.Value
+registeredUsersEncoder : Dict Username ConnectionId -> Encode.Value
 registeredUsersEncoder users =
-    Encode.dict identity Encode.bool users
+    Encode.dict identity Encode.string users
 
 
 sessionEncoder : State -> Encode.Value
