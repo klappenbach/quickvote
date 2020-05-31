@@ -3,5 +3,4 @@ elm-stuff
 packages/elm/elm-main.js
 elm-client/elm-main.js
 .idea
-.meteor
 package-lock.json
