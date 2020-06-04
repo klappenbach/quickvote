@@ -2,8 +2,6 @@ import {Meteor} from 'meteor/meteor';
 import {flatten} from 'mongo-dot-notation';
 import {Sessions} from '/items/collections';
 
-const dot = require('mongo-dot-notation');
-
 
 function maybeCompletePolls(session) {
     const polls = Object.entries(session.polls);
@@ -11,15 +9,10 @@ function maybeCompletePolls(session) {
         if (!poll.completed && Object.entries(poll.votes).length > 0) {
             const usernamesThatVoted = Object.keys(poll.votes);
             const usernamesInSession = Object.values(session.registeredUsers);
-            console.log(`usernamesThatVoted ${usernamesThatVoted}`);
-            console.log(`usernamesInSession ${usernamesInSession}`);
             const completed = usernamesInSession.every(name => usernamesThatVoted.includes(name));
-            console.log(`completed: ${completed}`);
             poll.completed = completed;
-            return [pollId, poll];
-        } else {
-            return [pollId, poll];
         }
+        return [pollId, poll];
 
     });
     session.polls = Object.fromEntries(maybeCompletedPolls);
@@ -29,7 +22,7 @@ function maybeCompletePolls(session) {
 function maybeSetConnectionId(session, usersConnectionId) {
     Object.entries(session.registeredUsers).forEach(([connectionId, username]) => {
         console.log(`maybeSetConnectionId for  <${connectionId}>, <${username}>`);
-        if(!connectionId) {
+        if (!connectionId) {
             delete session.registeredUsers[connectionId];
             session.registeredUsers[usersConnectionId] = username;
             console.log(`just set username ${username} to ${usersConnectionId}`);
@@ -50,10 +43,3 @@ Meteor.methods({
     }
 });
 
-// Meteor.onConnection((obj) => {
-//     console.log(JSON.stringify(obj));
-//     // obj.onDisconnect(() => {
-//     //     console.log(this.userId);
-//     // });
-//
-// });

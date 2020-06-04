@@ -5,7 +5,7 @@ import Browser.Dom
 import Browser.Navigation as Nav
 import Debug exposing (log)
 import Dict exposing (Dict)
-import Element exposing (Element, alignBottom, alignRight, alignTop, centerX, centerY, column, el, fill, height, htmlAttribute, maximum, padding, paddingXY, pointer, px, rgb255, row, spacing, text, width, wrappedRow)
+import Element exposing (..)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Events exposing (onClick)
@@ -506,35 +506,62 @@ userAlreadyRegistered username state =
             Dict.values registeredUsers |> List.member username
 
 
-voteFraction : Dict ConnectionId Username -> Poll -> ( Int, Int )
-voteFraction usersInSession poll =
+notYetVotedCount : Dict ConnectionId Username -> Poll -> Int
+notYetVotedCount usersInSession poll =
+    notYetVoted usersInSession poll
+        |> Set.size
+
+
+notYetVoted : Dict ConnectionId Username -> Poll -> Set Username
+notYetVoted usersInSession poll =
     let
         activeUsers =
-            if poll.completed then
-                poll.votes |> Dict.size
+            usersInSession |> Dict.values |> Set.fromList
 
-            else
-                usersInSession |> Dict.values |> List.length
-
-        votesCount =
-            poll.votes |> Dict.keys |> List.length
+        voters =
+            poll.votes |> Dict.keys |> Set.fromList
     in
-    ( votesCount, activeUsers )
+    Set.diff activeUsers voters
 
 
-voteFractionString : Dict ConnectionId Username -> Poll -> String
-voteFractionString registeredUsers poll =
-    voteFraction registeredUsers poll
-        |> Tuple.mapBoth String.fromInt String.fromInt
-        |> (\( presentCount, votedCount ) ->
-                String.join ""
-                    [ "("
-                    , presentCount
-                    , "/"
-                    , votedCount
-                    , ")"
-                    ]
-           )
+optionsVoteDistrSorted : Poll -> List ( Option, Int )
+optionsVoteDistrSorted poll =
+    let
+        votesDistCount : Dict OptionId Int
+        votesDistCount =
+            votesDistributionCount poll
+    in
+    poll.options
+        |> Dict.values
+        |> List.map (\option -> ( option, Dict.get option.id votesDistCount |> Maybe.withDefault 0 ))
+        |> List.sortBy (\( _, voteCount ) -> voteCount)
+        |> List.reverse
+
+
+votesDistributionCount : Poll -> Dict OptionId Int
+votesDistributionCount poll =
+    votesDistribution poll
+        |> Dict.map (\optionId usernames -> Set.size usernames)
+
+
+votesDistribution : Poll -> Dict OptionId (Set Username)
+votesDistribution poll =
+    poll.votes
+        |> Dict.foldl dictByOptionId Dict.empty
+
+
+dictByOptionId : Username -> OptionId -> Dict OptionId (Set Username) -> Dict OptionId (Set Username)
+dictByOptionId username optionId dict =
+    dict
+        |> Dict.update optionId
+            (\usernameSet ->
+                case usernameSet of
+                    Nothing ->
+                        Just (Set.fromList [ username ])
+
+                    Just usernames ->
+                        Just (Set.insert username usernames)
+            )
 
 
 
@@ -652,10 +679,17 @@ view model =
             row [ alignRight ] userInfo
 
         mainContent =
-            row [ centerX, centerY ]
+            row [ alignLeft, centerY, padding 50 ]
                 [ let
+                    edges =
+                        { top = 0
+                        , right = 0
+                        , bottom = 0
+                        , left = 0
+                        }
+
                     success =
-                        Element.rgb255 59 160 32
+                        Element.rgb255 99 190 92
 
                     turquoise =
                         Element.rgb255 138 238 238
@@ -669,17 +703,22 @@ view model =
                     justDisplayPoll : Poll -> Dict ConnectionId Username -> Element msg
                     justDisplayPoll poll registeredUsers =
                         text poll.topic
-                            :: (poll.options
-                                    |> Dict.values
-                                    |> List.map (\option -> text ("- " ++ option.label))
+                            :: (if poll.completed then
+                                    optionsVoteDistrSorted poll
+                                        |> List.map (\( option, voteCount ) -> text ("- " ++ option.label))
+
+                                else
+                                    poll.options
+                                        |> Dict.values
+                                        |> sortOptsByCreatedAt
+                                        |> List.map (\option -> text ("- " ++ option.label))
                                )
                             |> displayPoll poll registeredUsers
 
                     displayPoll : Poll -> Dict ConnectionId Username -> List (Element msg) -> Element msg
                     displayPoll poll registeredUsers optionsElems =
                         row
-                            [ width fill
-                            , Border.rounded 10
+                            [ Border.rounded 10
                             , Border.width 2
                             , Border.color
                                 (if poll.completed then
@@ -691,20 +730,34 @@ view model =
                             ]
                             [ column
                                 [ spacing 5
-                                , width fill
+                                , alignTop
                                 , padding 10
                                 ]
                                 optionsElems
                             , column
                                 [ spacing 5
-                                , width fill
+                                , alignTop
                                 , padding 10
                                 ]
                                 (text
-                                    (voteFractionString registeredUsers poll)
-                                    :: (poll.options
-                                            |> Dict.values
-                                            |> List.map (\option -> text "- ")
+                                    (if poll.completed then
+                                        "Votes: " ++ (poll.votes |> Dict.size |> String.fromInt)
+
+                                     else
+                                        "Yet to vote: " ++ (notYetVotedCount registeredUsers poll |> String.fromInt)
+                                    )
+                                    :: (optionsVoteDistrSorted poll
+                                            |> List.map
+                                                (\( option, voteCount ) ->
+                                                    text
+                                                        (if poll.completed then
+                                                            voteCount
+                                                                |> String.fromInt
+
+                                                         else
+                                                            ""
+                                                        )
+                                                )
                                        )
                                 )
                             ]
@@ -755,20 +808,20 @@ view model =
 
                                                     else
                                                         [ Input.radio
-                                                            [ alignRight
+                                                            [ width fill
+                                                            , padding 3
+                                                            , spacing 5
                                                             ]
                                                             { onChange = ChoseOption poll
                                                             , selected =
                                                                 poll.votes
                                                                     |> Dict.get username
                                                                     |> Maybe.andThen (\optionId -> Dict.get optionId poll.options)
-                                                            , label = Input.labelAbove [] (text poll.topic)
+                                                            , label = Input.labelAbove [ paddingEach { edges | bottom = 2 } ] (text poll.topic)
                                                             , options =
-                                                                Dict.toList poll.options
-                                                                    |> List.map
-                                                                        (\( id, option ) ->
-                                                                            Input.option option (text option.label)
-                                                                        )
+                                                                Dict.values poll.options
+                                                                    |> sortOptsByCreatedAt
+                                                                    |> List.map (\option -> Input.option option (text option.label))
                                                             }
                                                         ]
                                                             |> displayPoll poll registeredUsers
@@ -867,7 +920,7 @@ pollDecoder =
 
 timeDecoder : Decoder Time.Posix
 timeDecoder =
-    map Time.millisToPosix int
+    Decode.map Time.millisToPosix int
 
 
 pollingOptionsDecoder : Decoder (Dict OptionId Option)
