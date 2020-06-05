@@ -190,6 +190,7 @@ type Msg
     | LocalOptionTimestamp Poll Time.Posix
     | Ignored
     | Submit Poll Option
+    | DeleteLocalOption Poll Option
     | EditOption Poll Option
     | SetSession Value
     | ChoseOption Poll Option
@@ -275,6 +276,29 @@ update msg model =
 
         CreateOption poll ->
             ( model, localOptionTimestamp poll )
+
+        DeleteLocalOption poll option ->
+            let
+                prevOptionId : Maybe OptionId
+                prevOptionId =
+                    poll.options
+                        |> Dict.values
+                        |> sortOptsByCreatedAt
+                        |> List.filter (\opt -> Time.posixToMillis opt.createdAt < Time.posixToMillis option.createdAt)
+                        |> List.reverse
+                        |> List.head
+                        |> Maybe.map (\opt -> opt.id)
+
+                previousField =
+                    Maybe.withDefault poll.id prevOptionId
+
+                newPoll =
+                    { poll | options = Dict.remove option.id poll.options }
+
+                newPolls =
+                    Dict.insert newPoll.id newPoll model.localPolls
+            in
+            ( { model | localPolls = newPolls }, Task.attempt (always Ignored) (Browser.Dom.focus previousField) )
 
         EditOption poll option ->
             let
@@ -367,7 +391,7 @@ update msg model =
             ( model, localPollTimestamp )
 
         Ignored ->
-            ( Debug.log "focus failed" model, Cmd.none )
+            ( model, Cmd.none )
 
         LocalPollTimestamp posix ->
             let
@@ -481,16 +505,26 @@ sortOptsByCreatedAt options =
 
 onEnter : msg -> Element.Attribute msg
 onEnter msg =
+    on "keyup" msg "Enter"
+
+
+onBackspace : msg -> Element.Attribute msg
+onBackspace msg =
+    on "keydown" msg "Backspace"
+
+
+on : String -> msg -> String -> Element.Attribute msg
+on upOrDown msg keyName =
     Element.htmlAttribute
-        (Html.Events.on "keyup"
+        (Html.Events.on upOrDown
             (field "key" string
                 |> andThen
                     (\key ->
-                        if key == "Enter" then
+                        if key == keyName then
                             succeed msg
 
                         else
-                            fail "Not the enter key"
+                            fail ("Key was not pressed: " ++ keyName)
                     )
             )
         )
@@ -857,6 +891,13 @@ view model =
 
                                                                                  else
                                                                                     CreateOption poll
+                                                                                )
+                                                                            , onBackspace
+                                                                                (if String.isEmpty option.label then
+                                                                                    DeleteLocalOption poll option
+
+                                                                                 else
+                                                                                    Ignored
                                                                                 )
                                                                             ]
                                                                             { placeholder = Just (Input.placeholder [] (text "option"))
