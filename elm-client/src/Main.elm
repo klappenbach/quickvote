@@ -640,127 +640,144 @@ editSession state =
 view : Model -> Document Msg
 view model =
     let
+        mainBgColor =
+            Element.rgb255 250 251 252
+
         errorColor =
-            Element.rgb255 170 0 0
+            Element.rgb255 200 0 0
+
+        acceptColor =
+            Element.rgb255 63 144 4
 
         successColor =
-            Element.rgb255 59 160 32
+            Element.rgb255 224 84 19
 
         ongoingColor =
-            Element.rgb255 150 150 150
+            Element.rgb255 230 230 230
+
+        actionColor =
+            Element.rgb255 255 204 50
+
+        lightGrey =
+            Element.rgb255 195 195 195
+
+        focusColor =
+            Element.rgb255 155 203 255
+
+        edges =
+            { top = 0
+            , right = 0
+            , bottom = 0
+            , left = 0
+            }
 
         topRow =
             let
+                logo =
+                    row []
+                        [ el
+                            [ Font.size 40
+                            , Font.bold
+                            , Font.letterSpacing 5
+                            , Font.color successColor
+                            ]
+                            (text "Insta-vote!")
+                        ]
+
                 userInfo =
                     case model.user of
                         Anonymous ->
-                            [ Input.username [ alignRight ]
-                                { placeholder = Just (Input.placeholder [] (text (toString model.user)))
-                                , label = Input.labelLeft [ centerY, paddingXY 5 5 ] (text "username:")
-                                , text = ""
-                                , onChange = \str -> UsernameChanged str
-                                }
-                            , el
-                                [ width (px 25)
-                                , paddingXY 10 0
-                                , Font.size 30
-                                ]
-                                (text "")
-                            ]
-
-                        Typing username ->
-                            [ Input.username
-                                [ alignRight
-                                , onEnter (SubmitUsername username)
-                                , if userAlreadyRegistered username model.state then
-                                    Background.color errorColor
-
-                                  else
-                                    Background.color successColor
-                                ]
-                                { placeholder = Just (Input.placeholder [] (text (toString model.user)))
-                                , label = Input.labelLeft [ centerY, paddingXY 5 5 ] (text "username:")
-                                , text = username
-                                , onChange = \str -> UsernameChanged str
-                                }
-                            , if userAlreadyRegistered username model.state then
-                                el
+                            row [ alignRight ]
+                                [ Input.username [ width (px 200) ]
+                                    { placeholder = Just (Input.placeholder [] (text "Your name"))
+                                    , label = Input.labelLeft [ centerY, paddingXY 5 5 ] (text "Log in")
+                                    , text = ""
+                                    , onChange = \str -> UsernameChanged str
+                                    }
+                                , el
                                     [ width (px 25)
                                     , paddingXY 10 0
-                                    , Font.color errorColor
-                                    , Font.size 40
-                                    ]
-                                    (text "⊗")
-
-                              else
-                                el
-                                    [ width (px 25)
-                                    , paddingXY 10 0
-                                    , Font.color successColor
                                     , Font.size 30
                                     ]
-                                    (text "⏎")
-                            ]
+                                    (text "")
+                                ]
+
+                        Typing username ->
+                            row [ alignRight ]
+                                [ Input.username
+                                    ([ width (px 200)
+                                     , onEnter (SubmitUsername username)
+                                     ]
+                                        ++ (if userAlreadyRegistered username model.state then
+                                                [ Background.color errorColor ]
+
+                                            else
+                                                []
+                                           )
+                                    )
+                                    { placeholder = Just (Input.placeholder [] (text (toString model.user)))
+                                    , label = Input.labelLeft [ centerY, paddingXY 5 5 ] (text "Log in")
+                                    , text = username
+                                    , onChange = \str -> UsernameChanged str
+                                    }
+                                , if userAlreadyRegistered username model.state then
+                                    el
+                                        [ width (px 25)
+                                        , paddingXY 10 0
+                                        , Font.color errorColor
+                                        , Font.size 40
+                                        ]
+                                        (text "⊗")
+
+                                  else
+                                    el
+                                        [ width (px 25)
+                                        , paddingXY 10 0
+                                        , Font.color acceptColor
+                                        , Font.size 30
+                                        ]
+                                        (text "⏎")
+                                ]
 
                         Registered username ->
-                            [ column []
-                                [ text "username:"
-                                , text username
+                            row [ alignRight ]
+                                [ text ("Logged in as " ++ username)
                                 ]
-                            , el [ width (px 15) ] (text "")
-                            ]
             in
-            row [ alignRight ] userInfo
+            row [ width fill, alignTop, height (px 100), Border.widthEach { edges | bottom = 1 }, Border.color ongoingColor, spaceEvenly ]
+                [ logo
+                , userInfo
+                ]
 
         mainContent =
-            row [ alignLeft, centerY, padding 50 ]
-                [ let
-                    edges =
-                        { top = 0
-                        , right = 0
-                        , bottom = 0
-                        , left = 0
-                        }
-
-                    success =
-                        Element.rgb255 99 190 92
-
-                    turquoise =
-                        Element.rgb255 138 238 238
-
-                    darkBlue =
-                        Element.rgb255
-                            18
-                            93
-                            206
-
+            row [ alignLeft, spaceEvenly, height fill ]
+                (let
                     justDisplayPoll : Poll -> Dict ConnectionId Username -> Element msg
                     justDisplayPoll poll registeredUsers =
                         text poll.topic
                             :: (if poll.completed then
                                     optionsVoteDistrSorted poll
-                                        |> List.map (\( option, voteCount ) -> text ("- " ++ option.label))
+                                        |> List.map (\( option, voteCount ) -> el [ Font.size 18 ] (text ("- " ++ option.label)))
 
                                 else
                                     poll.options
                                         |> Dict.values
                                         |> sortOptsByCreatedAt
-                                        |> List.map (\option -> text ("- " ++ option.label))
+                                        |> List.map (\option -> el [ Font.size 18 ] (text ("- " ++ option.label)))
                                )
                             |> displayPoll poll registeredUsers
 
                     displayPoll : Poll -> Dict ConnectionId Username -> List (Element msg) -> Element msg
                     displayPoll poll registeredUsers optionsElems =
                         row
-                            [ Border.rounded 10
-                            , Border.width 2
-                            , Border.color
-                                (if poll.completed then
-                                    successColor
+                            [ padding 10
+                            , Border.rounded 10
+                            , Border.color successColor
+                            , if poll.completed then
+                                Background.color successColor
 
-                                 else
-                                    ongoingColor
-                                )
+                              else
+                                Border.width 2
                             ]
                             [ column
                                 [ spacing 5
@@ -773,46 +790,68 @@ view model =
                                 , alignTop
                                 , padding 10
                                 ]
-                                (text
-                                    (if poll.completed then
-                                        "Votes: " ++ (poll.votes |> Dict.size |> String.fromInt)
+                                (if poll.completed then
+                                    text ("Votes: " ++ (poll.votes |> Dict.size |> String.fromInt))
+                                        :: (optionsVoteDistrSorted poll
+                                                |> List.map
+                                                    (\( option, voteCount ) ->
+                                                        el [ Font.size 18 ]
+                                                            (text
+                                                                (voteCount
+                                                                    |> String.fromInt
+                                                                )
+                                                            )
+                                                    )
+                                           )
 
-                                     else
-                                        "Yet to vote: " ++ (notYetVotedCount registeredUsers poll |> String.fromInt)
-                                    )
-                                    :: (optionsVoteDistrSorted poll
-                                            |> List.map
-                                                (\( option, voteCount ) ->
-                                                    text
-                                                        (if poll.completed then
-                                                            voteCount
-                                                                |> String.fromInt
+                                 else
+                                    let
+                                        leftToVote =
+                                            notYetVoted registeredUsers poll |> Set.toList
+                                    in
+                                    text ("Yet to vote: " ++ (notYetVotedCount registeredUsers poll |> String.fromInt))
+                                        :: (leftToVote
+                                                |> List.take 2
+                                                |> List.map
+                                                    (\username ->
+                                                        el [ Font.size 18 ]
+                                                            (text username)
+                                                    )
+                                           )
+                                        ++ (let
+                                                theRest =
+                                                    leftToVote |> List.drop 2 |> List.length
 
-                                                         else
-                                                            ""
-                                                        )
-                                                )
-                                       )
+                                                theRestAsString =
+                                                    String.fromInt theRest
+                                            in
+                                            if theRest > 0 then
+                                                [ el [ Font.size 12, Font.color lightGrey ] (text ("... and " ++ theRestAsString ++ " more")) ]
+
+                                            else
+                                                []
+                                           )
                                 )
                             ]
-                  in
-                  case ( model.state, model.user ) of
+                 in
+                 case ( model.state, model.user ) of
                     ( NoSession, Registered name ) ->
-                        el []
+                        [ el []
                             (button
-                                [ Background.color success
+                                [ Background.color successColor
                                 , Element.focused []
                                 , padding 5
-                                , Border.color darkBlue
+                                , Border.width 2
                                 , paddingXY 32 16
                                 , Border.rounded 5
                                 , width fill
                                 ]
                                 { label = text "Create", onPress = Just CreateSession }
                             )
+                        ]
 
                     ( NoSession, _ ) ->
-                        el [] (text "Join a session via url")
+                        [ el [] (text "Join a session via url") ]
 
                     ( Session sessionId polls registeredUsers, _ ) ->
                         let
@@ -855,7 +894,7 @@ view model =
                                                             , options =
                                                                 Dict.values poll.options
                                                                     |> sortOptsByCreatedAt
-                                                                    |> List.map (\option -> Input.option option (text option.label))
+                                                                    |> List.map (\option -> Input.option option (el [ Font.size 18 ] (text option.label)))
                                                             }
                                                         ]
                                                             |> displayPoll poll registeredUsers
@@ -910,30 +949,52 @@ view model =
                                                 )
                                         )
                         in
-                        column [ spacing 20 ]
+                        [ column
+                            [ height fill
+                            , alignTop
+                            , alignLeft
+                            , paddingEach { top = 0, bottom = 0, left = 10, right = 20 }
+                            , Border.widthEach { edges | right = 1 }
+                            , Border.color ongoingColor
+                            , spacing 5
+                            ]
+                            (el
+                                [ Font.hairline
+                                , paddingEach { edges | bottom = 15 }
+                                ]
+                                (text "Users here now")
+                                :: (Dict.values registeredUsers
+                                        |> List.map
+                                            (\username ->
+                                                el [ Font.size 14 ] (text username)
+                                            )
+                                   )
+                            )
+                        , column [ height fill, alignTop, spacing 20, padding 30 ]
                             (listPolls
                                 ++ listLocalPolls
-                                ++ [ row []
+                                ++ [ row [ paddingEach { edges | top = 20 } ]
                                         [ button
                                             [ htmlAttribute (id "createPollButton")
-                                            , Background.color success
-                                            , Element.focused [ Border.color turquoise, Border.glow turquoise 3 ]
+                                            , Background.color actionColor
+                                            , Element.focused [ Border.glow focusColor 2 ]
                                             , padding 5
-                                            , Border.color darkBlue
-                                            , paddingXY 20 16
+                                            , paddingXY 20 14
                                             , Border.rounded 5
                                             , width fill
+                                            , Border.shadow { offset = ( 1, 1 ), size = 1, blur = 4, color = lightGrey }
                                             ]
-                                            { label = text "New vote", onPress = Just CreatePoll }
+                                            { label = text "Create new", onPress = Just CreatePoll }
                                         ]
                                    ]
                             )
-                ]
+                        ]
+                )
     in
     { title = "QuickVote"
     , body =
-        [ Element.layout [ height fill, width fill, padding 50 ]
-            (column [ height fill, width fill ]
+        [ Element.layout [ Background.color mainBgColor, height fill, width fill, padding 50 ]
+            (column [ height fill, width fill, spacing 30 ]
                 [ topRow
                 , mainContent
                 ]
