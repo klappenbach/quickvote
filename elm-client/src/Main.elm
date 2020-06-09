@@ -37,7 +37,12 @@ type alias Model =
     , user : User
     , key : Nav.Key
     , url : Url.Url
+    , settings : Settings
     }
+
+
+type alias Settings =
+    { copyPreviousOptions : Bool }
 
 
 type Error
@@ -155,8 +160,8 @@ toString user =
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    ( { state = fromUrl url, localPolls = Dict.empty, user = Anonymous, key = key, url = url }
-    , Cmd.batch [ maybeWatchSession url, Task.attempt (always Ignored) (Browser.Dom.focus "createPollButton") ]
+    ( { state = fromUrl url, localPolls = Dict.empty, user = Anonymous, key = key, url = url, settings = { copyPreviousOptions = True } }
+    , Cmd.batch [ maybeWatchSession url, focusCreateButton ]
     )
 
 
@@ -194,6 +199,7 @@ type Msg
     | EditOption Poll Option
     | SetSession Value
     | ChoseOption Poll Option
+    | SetCopyOptionsFromPrevious Bool
 
 
 
@@ -255,7 +261,7 @@ update msg model =
               else
                 Cmd.batch
                     [ editSession newState
-                    , Task.attempt (always Ignored) (Browser.Dom.focus "createPollButton")
+                    , focusCreateButton
                     ]
             )
 
@@ -354,7 +360,7 @@ update msg model =
                         newModel =
                             { model | localPolls = newLocalPolls, state = newState }
                     in
-                    ( newModel, editSession newState )
+                    ( newModel, Cmd.batch [ editSession newState, focusCreateButton ] )
 
         SetSession value ->
             case decodeValue sessionDecoder value of
@@ -367,6 +373,16 @@ update msg model =
                             Debug.log "err: " error
                     in
                     ( Debug.log "err: " model, Cmd.none )
+
+        SetCopyOptionsFromPrevious bool ->
+            let
+                settings =
+                    model.settings
+
+                newSettings =
+                    { settings | copyPreviousOptions = bool }
+            in
+            ( { model | settings = newSettings }, Cmd.none )
 
         PollTimestamp posix ->
             let
@@ -395,10 +411,43 @@ update msg model =
 
         LocalPollTimestamp posix ->
             let
+                latestPoll : Dict PollId Poll -> Maybe Poll
+                latestPoll polls =
+                    polls
+                        |> Dict.values
+                        |> sortPollsByCreatedAt
+                        |> List.reverse
+                        |> List.head
+                        |> Debug.log "Latest poll is "
+
+                changeOptionIds : Poll -> Dict OptionId Option
+                changeOptionIds prevPoll =
+                    prevPoll.options
+                        |> Dict.values
+                        |> List.map (\option -> { option | id = "c" ++ option.id })
+                        |> List.map (\option -> ( option.id, option ))
+                        |> Dict.fromList
+
                 poll =
                     pollFromTimestamp posix
             in
-            ( { model | localPolls = Dict.insert poll.id poll model.localPolls }, Task.attempt (always Ignored) (Browser.Dom.focus poll.id) )
+            case model.state of
+                NoSession ->
+                    ( model, Cmd.none )
+
+                Session sessionId polls registeredUsers ->
+                    let
+                        maybeCopyOfPrevious : Poll
+                        maybeCopyOfPrevious =
+                            if model.settings.copyPreviousOptions then
+                                latestPoll polls
+                                    |> Maybe.withDefault poll
+                                    |> (\p -> { poll | options = changeOptionIds p })
+
+                            else
+                                poll
+                    in
+                    ( { model | localPolls = Dict.insert poll.id maybeCopyOfPrevious model.localPolls }, Task.attempt (always Ignored) (Browser.Dom.focus poll.id) )
 
         ChoseOption poll option ->
             case model.state of
@@ -429,13 +478,18 @@ update msg model =
                                 newModel =
                                     { model | localPolls = newLocalPolls, state = newState }
                             in
-                            ( newModel, editSession newState )
+                            ( newModel, Cmd.batch [ editSession newState, focusCreateButton ] )
 
                         Anonymous ->
                             ( model, Cmd.none )
 
                         Typing userName ->
                             ( model, Cmd.none )
+
+
+focusCreateButton : Cmd Msg
+focusCreateButton =
+    Task.attempt (always Ignored) (Browser.Dom.focus "createPollButton")
 
 
 maybePushUrl : State -> Nav.Key -> Url.Url -> Cmd msg
@@ -495,12 +549,17 @@ localOptionTimestamp poll =
 
 sortByCreatedAt : List Poll -> List Poll
 sortByCreatedAt polls =
-    polls |> List.sortBy (\poll -> Time.posixToMillis poll.createdAt)
+    polls |> List.sortBy (\poll -> Time.posixToMillis poll.createdAt) |> List.reverse
 
 
 sortOptsByCreatedAt : List Option -> List Option
 sortOptsByCreatedAt options =
     options |> List.sortBy (\opt -> Time.posixToMillis opt.createdAt)
+
+
+sortPollsByCreatedAt : List Poll -> List Poll
+sortPollsByCreatedAt poll =
+    poll |> List.sortBy (\p -> Time.posixToMillis p.createdAt)
 
 
 onEnter : msg -> Element.Attribute msg
@@ -661,6 +720,9 @@ view model =
         lightGrey =
             Element.rgb255 195 195 195
 
+        white =
+            Element.rgb255 250 251 252
+
         focusColor =
             Element.rgb255 155 203 255
 
@@ -740,8 +802,9 @@ view model =
                                 ]
 
                         Registered username ->
-                            row [ alignRight ]
-                                [ text ("Logged in as " ++ username)
+                            row [ alignRight, alignBottom, paddingXY 0 5 ]
+                                [ el [ Font.hairline ] (text "Logged in as ")
+                                , text username
                                 ]
             in
             row [ width fill, alignTop, height (px 100), Border.widthEach { edges | bottom = 1 }, Border.color ongoingColor, spaceEvenly ]
@@ -750,21 +813,24 @@ view model =
                 ]
 
         mainContent =
-            row [ alignLeft, spaceEvenly, height fill ]
+            row [ alignLeft, spaceEvenly, height fill, width fill ]
                 (let
                     justDisplayPoll : Poll -> Dict ConnectionId Username -> Element msg
                     justDisplayPoll poll registeredUsers =
-                        text poll.topic
-                            :: (if poll.completed then
-                                    optionsVoteDistrSorted poll
-                                        |> List.map (\( option, voteCount ) -> el [ Font.size 18 ] (text ("- " ++ option.label)))
+                        (if poll.completed then
+                            el [ Font.color white ] (text poll.topic)
+                                :: (optionsVoteDistrSorted poll
+                                        |> List.map (\( option, voteCount ) -> el [ Font.size 18, Font.color white ] (text ("- " ++ option.label)))
+                                   )
 
-                                else
-                                    poll.options
+                         else
+                            text poll.topic
+                                :: (poll.options
                                         |> Dict.values
                                         |> sortOptsByCreatedAt
                                         |> List.map (\option -> el [ Font.size 18 ] (text ("- " ++ option.label)))
-                               )
+                                   )
+                        )
                             |> displayPoll poll registeredUsers
 
                     displayPoll : Poll -> Dict ConnectionId Username -> List (Element msg) -> Element msg
@@ -783,19 +849,23 @@ view model =
                                 [ spacing 5
                                 , alignTop
                                 , padding 10
+                                , paddingEach { edges | right = 20 }
                                 ]
                                 optionsElems
                             , column
                                 [ spacing 5
                                 , alignTop
-                                , padding 10
+                                , paddingXY 10 0
+                                , height fill
+                                , Border.widthEach { edges | left = 1 }
+                                , Border.color successColor
                                 ]
                                 (if poll.completed then
-                                    text ("Votes: " ++ (poll.votes |> Dict.size |> String.fromInt))
+                                    el [ Font.color white ] (text ("Votes: " ++ (poll.votes |> Dict.size |> String.fromInt)))
                                         :: (optionsVoteDistrSorted poll
                                                 |> List.map
                                                     (\( option, voteCount ) ->
-                                                        el [ Font.size 18 ]
+                                                        el [ Font.size 18, Font.color white ]
                                                             (text
                                                                 (voteCount
                                                                     |> String.fromInt
@@ -808,10 +878,13 @@ view model =
                                     let
                                         leftToVote =
                                             notYetVoted registeredUsers poll |> Set.toList
+
+                                        optionsCount =
+                                            Dict.size poll.options
                                     in
                                     text ("Yet to vote: " ++ (notYetVotedCount registeredUsers poll |> String.fromInt))
                                         :: (leftToVote
-                                                |> List.take 2
+                                                |> List.take (optionsCount - 1)
                                                 |> List.map
                                                     (\username ->
                                                         el [ Font.size 18 ]
@@ -820,7 +893,7 @@ view model =
                                            )
                                         ++ (let
                                                 theRest =
-                                                    leftToVote |> List.drop 2 |> List.length
+                                                    leftToVote |> List.drop (optionsCount - 1) |> List.length
 
                                                 theRestAsString =
                                                     String.fromInt theRest
@@ -966,28 +1039,50 @@ view model =
                                 :: (Dict.values registeredUsers
                                         |> List.map
                                             (\username ->
-                                                el [ Font.size 14 ] (text username)
+                                                el [ Font.size 15 ] (text username)
                                             )
                                    )
                             )
                         , column [ height fill, alignTop, spacing 20, padding 30 ]
-                            (listPolls
+                            ([ row [ paddingEach { edges | bottom = 20 } ]
+                                [ button
+                                    [ htmlAttribute (id "createPollButton")
+                                    , Background.color actionColor
+                                    , Element.focused [ Border.glow focusColor 2 ]
+                                    , padding 5
+                                    , paddingXY 20 14
+                                    , Border.rounded 5
+                                    , width fill
+                                    , Border.shadow { offset = ( 1, 1 ), size = 1, blur = 4, color = lightGrey }
+                                    ]
+                                    { label = text "Create new", onPress = Just CreatePoll }
+                                ]
+                             ]
                                 ++ listLocalPolls
-                                ++ [ row [ paddingEach { edges | top = 20 } ]
-                                        [ button
-                                            [ htmlAttribute (id "createPollButton")
-                                            , Background.color actionColor
-                                            , Element.focused [ Border.glow focusColor 2 ]
-                                            , padding 5
-                                            , paddingXY 20 14
-                                            , Border.rounded 5
-                                            , width fill
-                                            , Border.shadow { offset = ( 1, 1 ), size = 1, blur = 4, color = lightGrey }
-                                            ]
-                                            { label = text "Create new", onPress = Just CreatePoll }
-                                        ]
-                                   ]
+                                ++ listPolls
                             )
+                        , column
+                            [ alignRight
+                            , alignTop
+                            , paddingXY 10 0
+                            , Border.widthEach { edges | left = 1 }
+                            , Border.color lightGrey
+                            ]
+                            [ el
+                                [ Font.hairline
+                                , paddingEach { edges | bottom = 10 }
+                                ]
+                                (text "Settings")
+                            , el [ Font.size 15 ]
+                                (Input.checkbox []
+                                    { onChange = SetCopyOptionsFromPrevious
+                                    , icon = Input.defaultCheckbox
+                                    , checked = model.settings.copyPreviousOptions
+                                    , label =
+                                        Input.labelRight [] (text "Copy previous")
+                                    }
+                                )
+                            ]
                         ]
                 )
     in
