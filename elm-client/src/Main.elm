@@ -160,7 +160,7 @@ toString user =
 
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    ( { state = fromUrl url, localPolls = Dict.empty, user = Anonymous, key = key, url = url, settings = { copyPreviousOptions = True } }
+    ( { state = fromUrl url, localPolls = Dict.empty, user = Anonymous, key = key, url = url, settings = { copyPreviousOptions = False } }
     , Cmd.batch [ maybeWatchSession url, focusCreateButton ]
     )
 
@@ -169,10 +169,10 @@ maybeWatchSession : Url.Url -> Cmd msg
 maybeWatchSession url =
     case pathFromUrl url of
         Just path ->
-            watchSessionPort (log "watching session " path)
+            watchSessionPort path
 
         Nothing ->
-            log "no session in url " Cmd.none
+            Cmd.none
 
 
 
@@ -195,6 +195,7 @@ type Msg
     | LocalOptionTimestamp Poll Time.Posix
     | Ignored
     | Submit Poll Option
+    | DeleteLocalPoll Poll
     | DeleteLocalOption Poll Option
     | EditOption Poll Option
     | SetSession Value
@@ -283,6 +284,14 @@ update msg model =
         CreateOption poll ->
             ( model, localOptionTimestamp poll )
 
+        DeleteLocalPoll poll ->
+            let
+                newLocalPolls =
+                    model.localPolls
+                        |> Dict.remove poll.id
+            in
+            ( { model | localPolls = newLocalPolls }, focusCreateButton )
+
         DeleteLocalOption poll option ->
             let
                 prevOptionId : Maybe OptionId
@@ -365,14 +374,14 @@ update msg model =
         SetSession value ->
             case decodeValue sessionDecoder value of
                 Ok state ->
-                    ( Debug.log "decoded: " { model | state = state }, maybePushUrl state model.key model.url )
+                    ( { model | state = state }, maybePushUrl state model.key model.url )
 
                 Err error ->
                     let
-                        r =
-                            Debug.log "err: " error
+                        _ =
+                            Debug.log "decode error: " error
                     in
-                    ( Debug.log "err: " model, Cmd.none )
+                    ( model, Cmd.none )
 
         SetCopyOptionsFromPrevious bool ->
             let
@@ -382,7 +391,7 @@ update msg model =
                 newSettings =
                     { settings | copyPreviousOptions = bool }
             in
-            ( { model | settings = newSettings }, Cmd.none )
+            ( { model | settings = newSettings }, focusCreateButton )
 
         PollTimestamp posix ->
             let
@@ -418,7 +427,6 @@ update msg model =
                         |> sortPollsByCreatedAt
                         |> List.reverse
                         |> List.head
-                        |> Debug.log "Latest poll is "
 
                 changeOptionIds : Poll -> Dict OptionId Option
                 changeOptionIds prevPoll =
@@ -982,7 +990,20 @@ view model =
                                                 (Input.text
                                                     [ width (px 200)
                                                     , htmlAttribute (id poll.id)
-                                                    , onEnter (CreateOption poll)
+                                                    , onEnter
+                                                        (if not (String.isEmpty poll.topic) then
+                                                            CreateOption poll
+
+                                                         else
+                                                            Ignored
+                                                        )
+                                                    , onBackspace
+                                                        (if String.isEmpty poll.topic then
+                                                            DeleteLocalPoll poll
+
+                                                         else
+                                                            Ignored
+                                                        )
                                                     ]
                                                     { placeholder = Just (Input.placeholder [] (text "subject"))
                                                     , label = Input.labelLeft [] (text "")
@@ -998,11 +1019,18 @@ view model =
                                                                             [ width (px 150)
                                                                             , htmlAttribute (id option.id)
                                                                             , onEnter
-                                                                                (if String.isEmpty option.label then
+                                                                                (if
+                                                                                    String.isEmpty option.label
+                                                                                        && Dict.size poll.options
+                                                                                        > 2
+                                                                                 then
                                                                                     Submit poll option
 
-                                                                                 else
+                                                                                 else if not (String.isEmpty option.label) then
                                                                                     CreateOption poll
+
+                                                                                 else
+                                                                                    Ignored
                                                                                 )
                                                                             , onBackspace
                                                                                 (if String.isEmpty option.label then
@@ -1079,7 +1107,7 @@ view model =
                                     , icon = Input.defaultCheckbox
                                     , checked = model.settings.copyPreviousOptions
                                     , label =
-                                        Input.labelRight [] (text "Copy previous")
+                                        Input.labelRight [] (text "Copy previous options")
                                     }
                                 )
                             ]

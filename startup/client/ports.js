@@ -12,17 +12,15 @@ export const initPorts = (ports) => {
 const fromElm = (ports) => {
 
     ports.watchSessionPort.subscribe(sessionIdFromElm => {
-        console.log(`trying to subscribe to session ${sessionIdFromElm}`);
 
         Tracker.autorun(() => {
             const subs = [Meteor.subscribe('sessions', sessionIdFromElm)];
 
             if (allReady(subs)) {
-                console.log(`subscription to session ${sessionIdFromElm}: syncing complete`);
                 let session = Sessions.findOne({ "_id" : sessionIdFromElm});
 
                 if(session) {
-                    console.log(`sending to Elm: ${JSON.stringify(session)}`);
+                    //console.log(`sending to Elm: ${JSON.stringify(session)}`);
                     ports.sessionChanged.send(session);
                 }
             }
@@ -30,7 +28,7 @@ const fromElm = (ports) => {
     });
 
     ports.editSessionPort.subscribe(session => {
-        console.log(`Edit session ${JSON.stringify(session)}`)
+        //console.log(`Edit session ${JSON.stringify(session)}`)
         Meteor.call("editSession", session)
     });
 
